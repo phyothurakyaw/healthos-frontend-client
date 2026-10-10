@@ -1,0 +1,1 @@
+Place a properly licensed realistic human or anatomical model here named real-human.glb. The model is NOT bundled because no redistribution license has been supplied. Set VITE_ANATOMY_MODEL_URL in client/.env to use a different path.

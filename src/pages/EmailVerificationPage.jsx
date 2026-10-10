@@ -1,0 +1,10 @@
+import React,{useState} from "react";
+import {useLocation,useNavigate,Link} from "react-router-dom";
+import {api} from "../security/api.js";
+export default function EmailVerificationPage({onVerified}) {
+ const location=useLocation(),navigate=useNavigate();
+ const [email,setEmail]=useState(location.state?.email||"");const [code,setCode]=useState("");const [devCode,setDevCode]=useState(location.state?.devCode||"");const [message,setMessage]=useState(location.state?.message||"Check your inbox for a six-digit code.");const [busy,setBusy]=useState(false);
+ async function verify(e){e.preventDefault();setBusy(true);try{const result=await api("/auth/verify",{method:"POST",body:JSON.stringify({email,code})});onVerified?.(result.user);navigate("/dashboard",{replace:true});}catch(err){setMessage(err.message)}finally{setBusy(false)}}
+ async function resend(){setBusy(true);try{const result=await api("/auth/resend-verification",{method:"POST",body:JSON.stringify({email})});setMessage(result.message);setDevCode(result.devCode||"")}catch(err){setMessage(err.message)}finally{setBusy(false)}}
+ return <main className="app min-h-screen flex items-center justify-center p-6"><section className="panel w-full max-w-md p-8"><h1 className="text-2xl font-bold mb-4">Verify your email</h1><p className="muted mb-5" role="status">{message}</p><form onSubmit={verify} className="space-y-4"><input className="field" type="email" required placeholder="Email address" value={email} onChange={e=>setEmail(e.target.value)}/><input className="field text-center tracking-widest" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required placeholder="6-digit code" value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))}/><button className="btn w-full" disabled={busy||code.length!==6}>Verify account</button></form>{devCode&&<p className="mt-4 text-sm">Development code: <strong>{devCode}</strong></p>}<button type="button" className="ghost mt-4" disabled={busy||!email} onClick={resend}>Resend code</button><p className="mt-4"><Link to="/login" className="underline">Back to login</Link></p></section></main>;
+}
