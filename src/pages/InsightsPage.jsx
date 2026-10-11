@@ -1,6 +1,6 @@
-// src/pages/InsightsPage.jsx
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { api, getToken } from "../security/api";
 import {
   BarChart3,
   CheckCircle2,
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 export default function InsightsPage({
-  T = (x) => x,
+  T = (value) => value,
   checkins = [],
   completed = 0,
   total = 0,
@@ -25,23 +25,97 @@ export default function InsightsPage({
 }) {
   const [period, setPeriod] = useState("Day");
   const [activeBar, setActiveBar] = useState(null);
+  const [databaseCheckins, setDatabaseCheckins] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+
+  // Load real check-in records from the database.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      setLoadingHistory(true);
+      setHistoryError("");
+
+      try {
+        if (!getToken()) {
+          throw new Error(
+            "Sign in to view your saved check-in history."
+          );
+        }
+
+        // Keep this path if it matches your backend route.
+        const response = await api("/check-ins/history");
+
+        // Your backend returns { total, data, filter }.
+        const records = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.checkins)
+          ? response.checkins
+          : Array.isArray(response)
+          ? response
+          : null;
+
+        if (!records) {
+          throw new Error(
+            "Unexpected check-in history response."
+          );
+        }
+
+        if (!cancelled) {
+          setDatabaseCheckins(records);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDatabaseCheckins([]);
+          setHistoryError(
+            error.message || "Unable to load check-in history."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingHistory(false);
+        }
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkins]);
 
   const pending = Math.max(0, total - completed);
 
-  const completionRate =
-    total > 0 ? Math.round((completed / total) * 100) : 0;
+  const completionRate = total
+    ? Math.round((completed / total) * 100)
+    : 0;
 
-  // ========================================
-  // Calculate Check-in Data
-  // ========================================
-
+  // Use only createdAt, energyScore, and attentionScore.
   const data = useMemo(() => {
     const groups = new Map();
 
-    for (const item of checkins) {
-      const date = new Date(item.date);
+    for (const item of databaseCheckins) {
+      if (!item.createdAt) continue;
+      if (
+        item.energyScore == null ||
+        item.attentionScore == null
+      ) {
+        continue;
+      }
 
-      if (Number.isNaN(date.getTime())) continue;
+      const date = new Date(item.createdAt);
+      const energy = Number(item.energyScore);
+      const attention = Number(item.attentionScore);
+
+      if (
+        Number.isNaN(date.getTime()) ||
+        !Number.isFinite(energy) ||
+        !Number.isFinite(attention)
+      ) {
+        continue;
+      }
 
       let key;
 
@@ -66,17 +140,13 @@ export default function InsightsPage({
         count: 0,
       };
 
-      group.energy += Math.max(
-        0,
-        Math.min(100, Number(item.energy) || 0)
-      );
-
+      group.energy += Math.max(0, Math.min(100, energy));
       group.attention += Math.max(
         0,
-        Math.min(100, Number(item.attention) || 0)
+        Math.min(100, attention)
       );
-
       group.count += 1;
+
       groups.set(key, group);
     }
 
@@ -86,13 +156,11 @@ export default function InsightsPage({
       .map((group) => ({
         ...group,
         energy: Math.round(group.energy / group.count),
-        attention: Math.round(group.attention / group.count),
+        attention: Math.round(
+          group.attention / group.count
+        ),
       }));
-  }, [checkins, period]);
-
-  // ========================================
-  // Format Chart Labels
-  // ========================================
+  }, [databaseCheckins, period]);
 
   const formatLabel = (key) => {
     if (period === "Year") return key;
@@ -106,47 +174,37 @@ export default function InsightsPage({
       });
     }
 
-    return new Date(`${key}T12:00:00`).toLocaleDateString(
-      undefined,
-      {
-        month: "short",
-        day: "numeric",
-      }
-    );
+    return new Date(
+      `${key}T12:00:00`
+    ).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
   };
 
-  // ========================================
-  // Average Energy and Attention
-  // ========================================
-
+  // Weighted averages across the displayed records.
   const totalCheckins = data.reduce(
     (sum, item) => sum + item.count,
     0
   );
 
-  const averageEnergy =
-    totalCheckins > 0
-      ? Math.round(
-          data.reduce(
-            (sum, item) => sum + item.energy * item.count,
-            0
-          ) / totalCheckins
-        )
-      : 0;
+  const averageEnergy = totalCheckins
+    ? Math.round(
+        data.reduce(
+          (sum, item) => sum + item.energy * item.count,
+          0
+        ) / totalCheckins
+      )
+    : 0;
 
-  const averageAttention =
-    totalCheckins > 0
-      ? Math.round(
-          data.reduce(
-            (sum, item) => sum + item.attention * item.count,
-            0
-          ) / totalCheckins
-        )
-      : 0;
-
-  // ========================================
-  // Statistics Cards
-  // ========================================
+  const averageAttention = totalCheckins
+    ? Math.round(
+        data.reduce(
+          (sum, item) => sum + item.attention * item.count,
+          0
+        ) / totalCheckins
+      )
+    : 0;
 
   const stats = [
     {
@@ -175,25 +233,15 @@ export default function InsightsPage({
     },
   ];
 
-  const periods = [
-    { value: "Day", icon: CalendarDays },
-    { value: "Month", icon: CalendarRange },
-    { value: "Year", icon: Calendar },
-  ];
-
   return (
     <div className="space-y-5">
-      {/* ========================================
-          PAGE HEADER
-      ======================================== */}
-
+      {/* Header */}
       <div>
         <div className="mb-2 flex items-center gap-2">
           <BarChart3
             size={21}
             className="text-sky-400"
           />
-
           <span className="text-sm font-semibold uppercase tracking-wider text-sky-400">
             HealthOS Analytics
           </span>
@@ -208,10 +256,7 @@ export default function InsightsPage({
         </p>
       </div>
 
-      {/* ========================================
-          STATISTICS CARDS
-      ======================================== */}
-
+      {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         {stats.map((stat) => {
           const Icon = stat.icon;
@@ -226,10 +271,7 @@ export default function InsightsPage({
                 <div
                   className={`rounded-xl p-3 ${stat.background}`}
                 >
-                  <Icon
-                    size={23}
-                    className={stat.color}
-                  />
+                  <Icon size={23} className={stat.color} />
                 </div>
               </div>
 
@@ -248,13 +290,8 @@ export default function InsightsPage({
         })}
       </div>
 
-      {/* ========================================
-          RECENT CHECK-INS
-      ======================================== */}
-
+      {/* Recent Check-ins Chart */}
       <section className="panel p-5">
-        {/* Chart Header */}
-
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="flex items-center gap-2 text-xl font-bold">
@@ -262,7 +299,6 @@ export default function InsightsPage({
                 size={22}
                 className="text-sky-400"
               />
-
               Recent Check-ins
             </h2>
 
@@ -272,14 +308,17 @@ export default function InsightsPage({
             </p>
           </div>
 
-          {/* Period Filters */}
-
+          {/* Day / Month / Year */}
           <div
             className="flex flex-wrap gap-2"
             role="group"
             aria-label="Chart period"
           >
-            {periods.map(({ value, icon: Icon }) => (
+            {[
+              ["Day", CalendarDays],
+              ["Month", CalendarRange],
+              ["Year", Calendar],
+            ].map(([value, Icon]) => (
               <button
                 key={value}
                 type="button"
@@ -299,11 +338,18 @@ export default function InsightsPage({
           </div>
         </div>
 
-        {data.length === 0 ? (
-          /* ========================================
-              EMPTY STATE
-          ======================================== */
-
+        {loadingHistory ? (
+          <div className="py-10 text-center muted">
+            Loading check-in history...
+          </div>
+        ) : historyError ? (
+          <div
+            className="py-10 text-center text-red-400"
+            role="alert"
+          >
+            {historyError}
+          </div>
+        ) : data.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <div className="mb-4 rounded-full bg-sky-500/10 p-4">
               <ClipboardList
@@ -323,20 +369,14 @@ export default function InsightsPage({
           </div>
         ) : (
           <>
-            {/* ========================================
-                ENERGY & ATTENTION LEGEND
-                Minimal bottom spacing
-            ======================================== */}
-
-            <div className="mb-5 pb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+            {/* Legend */}
+            <div className="mb-1 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
               <span className="flex items-center gap-2">
                 <Zap
                   size={17}
                   className="text-emerald-400"
                 />
-
                 Energy
-
                 <span className="inline-block h-3 w-3 rounded-sm bg-emerald-400" />
               </span>
 
@@ -345,18 +385,12 @@ export default function InsightsPage({
                   size={17}
                   className="text-sky-400"
                 />
-
                 Attention
-
                 <span className="inline-block h-3 w-3 rounded-sm bg-sky-400" />
               </span>
             </div>
 
-            {/* ========================================
-                SELECTED BAR DETAILS
-                No empty space when inactive
-            ======================================== */}
-
+            {/* Selected Bar Details */}
             {activeBar && (
               <div
                 className="mb-2 inline-flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm text-white shadow-lg"
@@ -394,17 +428,13 @@ export default function InsightsPage({
               </div>
             )}
 
-            {/* ========================================
-                BAR CHART
-            ======================================== */}
-
+            {/* Original Bar Chart UI */}
             <div
-              className="mt-5 flex gap-2"
+              className="flex gap-2"
               role="group"
               aria-label="Check-in bar chart"
             >
-              {/* Y-Axis */}
-
+              {/* Y Axis */}
               <div className="muted flex h-60 flex-col justify-between pb-8 text-xs">
                 <span>100%</span>
                 <span>75%</span>
@@ -413,8 +443,7 @@ export default function InsightsPage({
                 <span>0%</span>
               </div>
 
-              {/* Chart Bars */}
-
+              {/* Bars */}
               <div className="min-w-0 flex-1 overflow-x-auto">
                 <div className="flex h-60 min-w-max gap-2 border-b border-slate-600">
                   {data.map((item) => (
@@ -424,48 +453,38 @@ export default function InsightsPage({
                     >
                       <button
                         type="button"
-                        onMouseEnter={() =>
-                          setActiveBar(item)
-                        }
-                        onMouseLeave={() =>
-                          setActiveBar(null)
-                        }
-                        onFocus={() =>
-                          setActiveBar(item)
-                        }
-                        onBlur={() =>
-                          setActiveBar(null)
-                        }
-                        onClick={() =>
-                          setActiveBar(item)
-                        }
+                        onMouseEnter={() => setActiveBar(item)}
+                        onMouseLeave={() => setActiveBar(null)}
+                        onFocus={() => setActiveBar(item)}
+                        onBlur={() => setActiveBar(null)}
+                        onClick={() => setActiveBar(item)}
                         className="flex h-52 w-full cursor-pointer items-end justify-center gap-1 rounded transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                         aria-label={`${formatLabel(
                           item.key
-                        )}: Energy ${item.energy}%, Attention ${
-                          item.attention
-                        }%, ${item.count} check-ins`}
+                        )}: Energy ${item.energy}%, Attention ${item.attention}%`}
                       >
-                        {/* Energy Bar */}
-
+                        {/* Energy */}
                         <span
-                          className="w-5 rounded-t bg-emerald-400 transition-opacity hover:opacity-80"
+                          className="w-5 rounded-t bg-emerald-400"
                           style={{
-                            height: `${item.energy}%`,
+                            height: `${Math.max(
+                              0,
+                              Math.min(100, item.energy)
+                            )}%`,
                           }}
                         />
 
-                        {/* Attention Bar */}
-
+                        {/* Attention */}
                         <span
-                          className="w-5 rounded-t bg-sky-400 transition-opacity hover:opacity-80"
+                          className="w-5 rounded-t bg-sky-400"
                           style={{
-                            height: `${item.attention}%`,
+                            height: `${Math.max(
+                              0,
+                              Math.min(100, item.attention)
+                            )}%`,
                           }}
                         />
                       </button>
-
-                      {/* X-Axis Label */}
 
                       <span className="muted mt-2 whitespace-nowrap text-xs">
                         {formatLabel(item.key)}
@@ -476,100 +495,78 @@ export default function InsightsPage({
               </div>
             </div>
 
-            {/* ========================================
-                CHART FOOTER
-            ======================================== */}
-
             <p className="muted mt-3 flex items-center gap-2 text-xs">
               <Info size={14} />
-              Last 12 periods with saved check-ins.
-              Periods without data are omitted.
+              Last 12 periods with available check-in data.
             </p>
           </>
         )}
       </section>
 
-      {/* ========================================
-          AVERAGE ENERGY & ATTENTION
-      ======================================== */}
+      {/* Average Energy and Attention */}
+      {!loadingHistory &&
+        !historyError &&
+        data.length > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              {
+                title: "Average Energy",
+                value: averageEnergy,
+                Icon: Zap,
+                color: "text-emerald-400",
+                background: "bg-emerald-500/10",
+                bar: "bg-emerald-400",
+              },
+              {
+                title: "Average Attention",
+                value: averageAttention,
+                Icon: Brain,
+                color: "text-sky-400",
+                background: "bg-sky-500/10",
+                bar: "bg-sky-400",
+              },
+            ].map((item) => (
+              <div key={item.title} className="panel p-6">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`rounded-xl p-3 ${item.background}`}
+                  >
+                    <item.Icon
+                      size={24}
+                      className={item.color}
+                    />
+                  </div>
 
-      {data.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Average Energy */}
+                  <div>
+                    <h3 className="font-semibold">
+                      {item.title}
+                    </h3>
 
-          <div className="panel p-6">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-emerald-500/10 p-3">
-                <Zap
-                  size={24}
-                  className="text-emerald-400"
-                />
-              </div>
+                    <p className="muted text-sm">
+                      Across displayed{" "}
+                      {period.toLowerCase()} periods
+                    </p>
+                  </div>
+                </div>
 
-              <div>
-                <h3 className="font-semibold">
-                  Average Energy
-                </h3>
-
-                <p className="muted text-sm">
-                  Across displayed{" "}
-                  {period.toLowerCase()} periods
+                <p
+                  className={`mt-5 text-3xl font-bold ${item.color}`}
+                >
+                  {item.value}%
                 </p>
+
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-700">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${item.bar}`}
+                    style={{
+                      width: `${item.value}%`,
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-
-            <p className="mt-5 text-3xl font-bold text-emerald-400">
-              {averageEnergy}%
-            </p>
-
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-700">
-              <div
-                className="h-full rounded-full bg-emerald-400 transition-all duration-500"
-                style={{
-                  width: `${averageEnergy}%`,
-                }}
-              />
-            </div>
+            ))}
           </div>
-
-          {/* Average Attention */}
-
-          <div className="panel p-6">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-sky-500/10 p-3">
-                <Brain
-                  size={24}
-                  className="text-sky-400"
-                />
-              </div>
-
-              <div>
-                <h3 className="font-semibold">
-                  Average Attention
-                </h3>
-
-                <p className="muted text-sm">
-                  Across displayed{" "}
-                  {period.toLowerCase()} periods
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-5 text-3xl font-bold text-sky-400">
-              {averageAttention}%
-            </p>
-
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-700">
-              <div
-                className="h-full rounded-full bg-sky-400 transition-all duration-500"
-                style={{
-                  width: `${averageAttention}%`,
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }

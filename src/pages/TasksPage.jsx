@@ -1,103 +1,39 @@
 
-import React, { useEffect, useState } from "react";
-
+import React, { useState } from "react";
 import {
-  ListTodo,
-  Plus,
-  Trash2,
-  Clock3,
-  CalendarDays,
-  Target,
-  Zap,
-  Brain,
-  Play,
-  Pause,
-  RotateCcw,
-  CheckCircle2,
-  Circle,
-  Sparkles,
-  Timer,
-  ArrowRight,
-  AlertCircle,
+  ListTodo, Plus, Trash2, Clock3, CalendarDays,
+  Target, Zap, Brain, Play, Pause, RotateCcw,
+  CheckCircle2, Circle, Sparkles, Timer,
+  ArrowRight, AlertCircle,
 } from "lucide-react";
-
-// ========================================
-// Helpers
-// ========================================
 
 const formatTime = (seconds) => {
   const safe = Math.max(0, Math.floor(seconds || 0));
-
-  const minutes = Math.floor(safe / 60);
-  const remainingSeconds = safe % 60;
-
-  return `${String(minutes).padStart(2, "0")}:${String(
-    remainingSeconds
-  ).padStart(2, "0")}`;
+  return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
 };
 
 const priorityColors = {
   high: "text-red-400 bg-red-500/10 border-red-500/20",
-  medium:
-    "text-amber-400 bg-amber-500/10 border-amber-500/20",
+  medium: "text-amber-400 bg-amber-500/10 border-amber-500/20",
   low: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
 };
 
-const defaultTask = {
-  title: "",
-  priority: "medium",
-  duration: 25,
-  deadline: "",
-  energy: 50,
-  attention: 50,
-};
-
-// ========================================
-// Main Tasks Page
-// ========================================
-
 export default function TasksPage({
-  T,
-  check,
-  tasks,
-  setTasks,
-  task,
-  setTask,
-  recommended,
-  ordered,
-  completed,
-  total,
-  score,
-  seconds,
-  setSeconds,
-  running,
-  setRunning,
-  focusSessionStarted,
-  setFocusSessionStarted,
-  addTask,
-  setPage,
+  T, check, tasks, task, setTask, recommended, ordered,
+  completed, total, score, seconds, setSeconds,
+  running, setRunning, focusSessionStarted,
+  setFocusSessionStarted, addTask, toggleTask,
+  deleteTask, busy,
 }) {
   const [showAddTask, setShowAddTask] = useState(false);
   const [filter, setFilter] = useState("all");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
-
-  // ========================================
-  // Recommended Task
-  // ========================================
 
   const selectedTask = tasks.find(
     (item) => item.id === selectedTaskId && !item.done
   );
 
   const focusTask = selectedTask || recommended;
-
-  const taskScore = focusTask
-    ? score(focusTask, check)
-    : 0;
-
-  // ========================================
-  // Focus Timer
-  // ========================================
 
   const focusDuration = Math.max(
     1,
@@ -106,18 +42,14 @@ export default function TasksPage({
 
   const totalFocusSeconds = focusDuration * 60;
 
-  const progress =
-    totalFocusSeconds > 0
-      ? Math.min(
-          100,
-          Math.max(
-            0,
-            ((totalFocusSeconds - seconds) /
-              totalFocusSeconds) *
-              100
-          )
-        )
-      : 0;
+  const progress = Math.min(
+    100,
+    Math.max(
+      0,
+      ((totalFocusSeconds - seconds) /
+        totalFocusSeconds) * 100
+    )
+  );
 
   const startTimer = () => {
     if (!focusTask) return;
@@ -130,42 +62,12 @@ export default function TasksPage({
     setRunning(true);
   };
 
-  const pauseTimer = () => {
-    setRunning(false);
-  };
+  const pauseTimer = () => setRunning(false);
 
   const resetTimer = () => {
     setRunning(false);
     setFocusSessionStarted(false);
     setSeconds(totalFocusSeconds);
-  };
-
-  // ========================================
-  // Task Actions
-  // ========================================
-
-  const toggleTask = (id) => {
-    setTasks((previous) =>
-      previous.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              done: !item.done,
-            }
-          : item
-      )
-    );
-  };
-
-  const deleteTask = (id) => {
-    setTasks((previous) =>
-      previous.filter((item) => item.id !== id)
-    );
-
-    if (selectedTaskId === id) {
-      setSelectedTaskId(null);
-      resetTimer();
-    }
   };
 
   const focusOnTask = (item) => {
@@ -177,76 +79,49 @@ export default function TasksPage({
     );
   };
 
-  const finishFocusTask = () => {
+  const handleDelete = async (id) => {
+    const success = await deleteTask(id);
+
+    if (success && selectedTaskId === id) {
+      setSelectedTaskId(null);
+      resetTimer();
+    }
+  };
+
+  const finishFocusTask = async () => {
     if (!focusTask) return;
 
-    setTasks((previous) =>
-      previous.map((item) =>
-        item.id === focusTask.id
-          ? { ...item, done: true }
-          : item
-      )
-    );
+    const success = await toggleTask(focusTask.id, true);
+    if (!success) return;
 
     setSelectedTaskId(null);
     setRunning(false);
     setFocusSessionStarted(false);
   };
 
-  // ========================================
-// Sort Tasks by Recommendation Score
-// ========================================
-
-const sortedTasks = [...tasks].sort((a, b) => {
-  // Active tasks first, completed tasks last
-  if (a.done !== b.done) {
-    return Number(a.done) - Number(b.done);
-  }
-
-  // Highest recommendation score first
-  const scoreA = score(a, check);
-  const scoreB = score(b, check);
-
-  if (scoreA !== scoreB) {
-    return scoreB - scoreA;
-  }
-
-  // Tie-breaker: High → Medium → Low
-  const priorityOrder = {
-    high: 0,
-    medium: 1,
-    low: 2,
-  };
-
-  return (
-    (priorityOrder[a.priority?.toLowerCase()] ?? 3) -
-    (priorityOrder[b.priority?.toLowerCase()] ?? 3)
-  );
-});
-
-// ========================================
-// Filter Tasks
-// ========================================
-
-const filteredTasks = sortedTasks.filter((item) => {
-  if (filter === "active") return !item.done;
-  if (filter === "completed") return item.done;
-  return true;
-});
+  const filteredTasks = ordered.filter((item) => {
+    if (filter === "active") return !item.done;
+    if (filter === "completed") return item.done;
+    return true;
+  });
 
   const completionPercentage =
     total > 0 ? Math.round((completed / total) * 100) : 0;
 
-  // ========================================
-  // Render
-  // ========================================
+  const match = (item) => {
+    const result = score(item, check);
+    return result == null ? "Not ranked" : `${Math.round(result)}% match`;
+  };
+
+  const changeTaskField = (key, value) =>
+    setTask((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
 
   return (
     <div className="space-y-7">
-      {/* ====================================
-          PAGE HEADER
-      ==================================== */}
-
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -255,11 +130,9 @@ const filteredTasks = sortedTasks.filter((item) => {
               TASK MANAGEMENT
             </span>
           </div>
-
           <h2 className="text-2xl md:text-3xl font-bold">
             Your Tasks
           </h2>
-
           <p className="muted mt-2">
             Plan your day, protect your attention, and stay productive.
           </p>
@@ -275,32 +148,22 @@ const filteredTasks = sortedTasks.filter((item) => {
         </button>
       </div>
 
-      {/* ====================================
-          PROGRESS OVERVIEW
-      ==================================== */}
-
+      {/* Statistics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="panel p-5">
           <div className="flex items-center justify-between">
             <span className="muted text-sm">Total Tasks</span>
             <ListTodo size={19} className="text-cyan-400" />
           </div>
-
           <p className="text-3xl font-bold mt-3">{total}</p>
         </div>
 
         <div className="panel p-5">
           <div className="flex items-center justify-between">
             <span className="muted text-sm">Completed</span>
-            <CheckCircle2
-              size={19}
-              className="text-emerald-400"
-            />
+            <CheckCircle2 size={19} className="text-emerald-400" />
           </div>
-
-          <p className="text-3xl font-bold mt-3">
-            {completed}
-          </p>
+          <p className="text-3xl font-bold mt-3">{completed}</p>
         </div>
 
         <div className="panel p-5">
@@ -308,33 +171,23 @@ const filteredTasks = sortedTasks.filter((item) => {
             <span className="muted text-sm">Progress</span>
             <Target size={19} className="text-purple-400" />
           </div>
-
           <p className="text-3xl font-bold mt-3">
             {completionPercentage}%
           </p>
-
           <div className="h-2 bg-white/10 rounded-full mt-3 overflow-hidden">
             <div
               className="h-full bg-cyan-400 rounded-full transition-all duration-500"
-              style={{
-                width: `${completionPercentage}%`,
-              }}
+              style={{ width: `${completionPercentage}%` }}
             />
           </div>
         </div>
       </div>
 
-      {/* ====================================
-          RECOMMENDED TASK + FOCUS TIMER
-      ==================================== */}
-
+      {/* Recommendation and Timer */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recommended Next Task */}
-
         <div className="panel p-6">
           <div className="flex items-center gap-2 mb-5">
             <Sparkles size={20} className="text-cyan-400" />
-
             <h3 className="text-xl font-bold">
               Recommended Next Task
             </h3>
@@ -347,21 +200,17 @@ const filteredTasks = sortedTasks.filter((item) => {
                   <p className="muted text-sm mb-2">
                     Best task for your current energy and attention
                   </p>
-
                   <h4 className="text-2xl font-bold">
                     {recommended.title}
                   </h4>
                 </div>
-
                 <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/20 px-3 py-2 text-center">
                   <p className="text-2xl font-bold text-cyan-400">
-                    {recommended.score ??
-                      score(recommended, check)}
+                    {score(recommended, check) == null
+                      ? "—"
+                      : Math.round(score(recommended, check))}
                   </p>
-
-                  <p className="text-xs muted">
-                    Match
-                  </p>
+                  <p className="text-xs muted">Match</p>
                 </div>
               </div>
 
@@ -374,12 +223,10 @@ const filteredTasks = sortedTasks.filter((item) => {
                 >
                   {recommended.priority?.toUpperCase()} PRIORITY
                 </span>
-
                 <span className="flex items-center gap-1 text-sm muted">
                   <Clock3 size={15} />
                   {recommended.duration} min
                 </span>
-
                 {recommended.deadline && (
                   <span className="flex items-center gap-1 text-sm muted">
                     <CalendarDays size={15} />
@@ -394,23 +241,26 @@ const filteredTasks = sortedTasks.filter((item) => {
                     <Zap size={16} className="text-amber-400" />
                     Energy needed
                   </div>
-
                   <p className="text-xl font-bold mt-2">
                     {recommended.energy}%
                   </p>
                 </div>
-
                 <div className="rounded-xl bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-sm muted">
                     <Brain size={16} className="text-purple-400" />
                     Attention needed
                   </div>
-
                   <p className="text-xl font-bold mt-2">
                     {recommended.attention}%
                   </p>
                 </div>
               </div>
+
+              {recommended.explanation && (
+                <p className="muted text-sm mt-4">
+                  {recommended.explanation}
+                </p>
+              )}
 
               <button
                 type="button"
@@ -428,143 +278,105 @@ const filteredTasks = sortedTasks.filter((item) => {
                 size={45}
                 className="text-emerald-400 mx-auto mb-4"
               />
-
               <h4 className="text-lg font-bold">
-                All tasks completed!
+                No recommended task
               </h4>
-
               <p className="muted mt-2">
-                Add another task to get a recommendation.
+                Complete a check-in and add a task to get a recommendation.
               </p>
             </div>
           )}
         </div>
 
         {/* Focus Timer */}
-
         <div className="panel p-6">
           <div className="flex items-center gap-2 mb-5">
             <Timer size={20} className="text-purple-400" />
-
-            <h3 className="text-xl font-bold">
-              Focus Timer
-            </h3>
+            <h3 className="text-xl font-bold">Focus Timer</h3>
           </div>
 
           {focusTask ? (
-            <>
-              <div className="text-center">
-                <p className="muted text-sm">
-                  Currently focusing on
-                </p>
+            <div className="text-center">
+              <p className="muted text-sm">Currently focusing on</p>
+              <h4 className="font-semibold mt-2 text-lg">
+                {focusTask.title}
+              </h4>
 
-                <h4 className="font-semibold mt-2 text-lg">
-                  {focusTask.title}
-                </h4>
-
-                <div className="relative w-52 h-52 mx-auto my-6">
-                  <svg
-                    className="w-full h-full -rotate-90"
-                    viewBox="0 0 200 200"
-                  >
-                    <circle
-                      cx="100"
-                      cy="100"
-                      r="88"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="9"
-                      className="text-white/10"
-                    />
-
-                    <circle
-                      cx="100"
-                      cy="100"
-                      r="88"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="9"
-                      strokeLinecap="round"
-                      className="text-cyan-400 transition-all duration-500"
-                      strokeDasharray={2 * Math.PI * 88}
-                      strokeDashoffset={
-                        2 *
-                        Math.PI *
-                        88 *
-                        (1 - progress / 100)
-                      }
-                    />
-                  </svg>
-
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-4xl font-bold tracking-wider tabular-nums">
-                      {formatTime(seconds)}
-                    </span>
-
-                    <span className="muted text-sm mt-2">
-                      {running
-                        ? "Stay focused"
-                        : seconds === 0
-                          ? "Session finished"
-                          : "Ready to focus"}
-                    </span>
-                  </div>
+              <div className="relative w-52 h-52 mx-auto my-6">
+                <svg
+                  className="w-full h-full -rotate-90"
+                  viewBox="0 0 200 200"
+                >
+                  <circle
+                    cx="100" cy="100" r="88"
+                    fill="none" stroke="currentColor"
+                    strokeWidth="9" className="text-white/10"
+                  />
+                  <circle
+                    cx="100" cy="100" r="88"
+                    fill="none" stroke="currentColor"
+                    strokeWidth="9" strokeLinecap="round"
+                    className="text-cyan-400 transition-all duration-500"
+                    strokeDasharray={2 * Math.PI * 88}
+                    strokeDashoffset={
+                      2 * Math.PI * 88 * (1 - progress / 100)
+                    }
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-4xl font-bold tracking-wider tabular-nums">
+                    {formatTime(seconds)}
+                  </span>
+                  <span className="muted text-sm mt-2">
+                    {running
+                      ? "Stay focused"
+                      : seconds === 0
+                        ? "Session finished"
+                        : "Ready to focus"}
+                  </span>
                 </div>
+              </div>
 
-                <div className="flex flex-wrap items-center justify-center gap-3">
-                  {!running ? (
-                    <button
-                      type="button"
-                      onClick={startTimer}
-                      className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
-                    >
-                      <Play size={17} />
-                      {focusSessionStarted
-                        ? "Resume"
-                        : "Start Focus"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={pauseTimer}
-                      className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
-                    >
-                      <Pause size={17} />
-                      Pause
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={resetTimer}
-                    className="px-5 py-3 rounded-xl border border-white/20 flex items-center gap-2"
-                  >
-                    <RotateCcw size={17} />
-                    Reset
-                  </button>
-                </div>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={running ? pauseTimer : startTimer}
+                  className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
+                >
+                  {running ? <Pause size={17} /> : <Play size={17} />}
+                  {running
+                    ? "Pause"
+                    : focusSessionStarted
+                      ? "Resume"
+                      : "Start Focus"}
+                </button>
 
                 <button
                   type="button"
-                  onClick={finishFocusTask}
-                  className="mt-5 text-sm text-emerald-400 hover:underline flex items-center gap-2 mx-auto"
+                  onClick={resetTimer}
+                  className="px-5 py-3 rounded-xl border border-white/20 flex items-center gap-2"
                 >
-                  <CheckCircle2 size={17} />
-                  Mark Task as Completed
+                  <RotateCcw size={17} />
+                  Reset
                 </button>
               </div>
-            </>
+
+              <button
+                type="button"
+                onClick={finishFocusTask}
+                className="mt-5 text-sm text-emerald-400 hover:underline flex items-center gap-2 mx-auto"
+              >
+                <CheckCircle2 size={17} />
+                Mark Task as Completed
+              </button>
+            </div>
           ) : (
             <div className="text-center py-12">
               <Timer
                 size={45}
                 className="text-purple-400 mx-auto mb-4"
               />
-
-              <h4 className="text-lg font-bold">
-                No active task
-              </h4>
-
+              <h4 className="text-lg font-bold">No active task</h4>
               <p className="muted mt-2">
                 Add a task to start a focus session.
               </p>
@@ -573,10 +385,7 @@ const filteredTasks = sortedTasks.filter((item) => {
         </div>
       </div>
 
-      {/* ====================================
-          ADD TASK FORM
-      ==================================== */}
-
+      {/* Add Task Form */}
       {showAddTask && (
         <div className="panel p-6">
           <h3 className="text-xl font-bold mb-5">
@@ -584,9 +393,13 @@ const filteredTasks = sortedTasks.filter((item) => {
           </h3>
 
           <form
-            onSubmit={(event) => {
-              addTask(event);
-              setShowAddTask(false);
+            onSubmit={async (event) => {
+              try {
+                await addTask(event);
+                setShowAddTask(false);
+              } catch {
+                // Error is displayed by App.jsx.
+              }
             }}
             className="space-y-5"
           >
@@ -594,16 +407,12 @@ const filteredTasks = sortedTasks.filter((item) => {
               <label className="block text-sm font-medium mb-2">
                 Task Name
               </label>
-
               <input
                 type="text"
                 required
                 value={task.title}
                 onChange={(event) =>
-                  setTask({
-                    ...task,
-                    title: event.target.value,
-                  })
+                  changeTaskField("title", event.target.value)
                 }
                 placeholder="e.g. Complete algorithms assignment"
                 className="w-full rounded-xl p-3 bg-white/5 border border-white/10 outline-none focus:border-cyan-400"
@@ -615,14 +424,10 @@ const filteredTasks = sortedTasks.filter((item) => {
                 <label className="block text-sm font-medium mb-2">
                   Priority
                 </label>
-
                 <select
                   value={task.priority}
                   onChange={(event) =>
-                    setTask({
-                      ...task,
-                      priority: event.target.value,
-                    })
+                    changeTaskField("priority", event.target.value)
                   }
                   className="w-full rounded-xl p-3 bg-white/5 border border-white/10"
                 >
@@ -636,76 +441,56 @@ const filteredTasks = sortedTasks.filter((item) => {
                 <label className="block text-sm font-medium mb-2">
                   Duration (minutes)
                 </label>
-
                 <input
                   type="number"
                   min="1"
                   max="480"
+                  required
                   value={task.duration}
                   onChange={(event) =>
-                    setTask({
-                      ...task,
-                      duration: Number(event.target.value),
-                    })
+                    changeTaskField(
+                      "duration",
+                      Number(event.target.value)
+                    )
                   }
                   className="w-full rounded-xl p-3 bg-white/5 border border-white/10"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Energy Required (%)
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={task.energy}
-                  onChange={(event) =>
-                    setTask({
-                      ...task,
-                      energy: Number(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl p-3 bg-white/5 border border-white/10"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Attention Required (%)
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={task.attention}
-                  onChange={(event) =>
-                    setTask({
-                      ...task,
-                      attention: Number(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl p-3 bg-white/5 border border-white/10"
-                />
-              </div>
+              {[
+                ["energy", "Energy Required (%)"],
+                ["attention", "Attention Required (%)"],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium mb-2">
+                    {label}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={task[key]}
+                    onChange={(event) =>
+                      changeTaskField(
+                        key,
+                        Number(event.target.value)
+                      )
+                    }
+                    className="w-full rounded-xl p-3 bg-white/5 border border-white/10"
+                  />
+                </div>
+              ))}
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-2">
                 Deadline (optional)
               </label>
-
               <input
                 type="date"
                 value={task.deadline || ""}
                 onChange={(event) =>
-                  setTask({
-                    ...task,
-                    deadline: event.target.value,
-                  })
+                  changeTaskField("deadline", event.target.value)
                 }
                 className="w-full rounded-xl p-3 bg-white/5 border border-white/10"
               />
@@ -714,12 +499,12 @@ const filteredTasks = sortedTasks.filter((item) => {
             <div className="flex gap-3">
               <button
                 type="submit"
+                disabled={busy}
                 className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
               >
                 <Plus size={17} />
-                Save Task
+                {busy ? "Saving..." : "Save Task"}
               </button>
-
               <button
                 type="button"
                 onClick={() => setShowAddTask(false)}
@@ -732,19 +517,13 @@ const filteredTasks = sortedTasks.filter((item) => {
         </div>
       )}
 
-      {/* ====================================
-          TASK LIST
-      ==================================== */}
-
+      {/* All Tasks */}
       <div className="panel p-6">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
-            <h3 className="text-xl font-bold">
-              All Tasks
-            </h3>
-
+            <h3 className="text-xl font-bold">All Tasks</h3>
             <p className="muted text-sm mt-1">
-              Organized by priority and deadline
+              Organized by recommendation and priority
             </p>
           </div>
 
@@ -776,10 +555,7 @@ const filteredTasks = sortedTasks.filter((item) => {
               size={40}
               className="muted mx-auto mb-4"
             />
-
-            <p className="muted">
-              No tasks found.
-            </p>
+            <p className="muted">No tasks found.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -809,19 +585,14 @@ const filteredTasks = sortedTasks.filter((item) => {
                         className="text-emerald-400"
                       />
                     ) : (
-                      <Circle
-                        size={23}
-                        className="muted"
-                      />
+                      <Circle size={23} className="muted" />
                     )}
                   </button>
 
                   <div className="min-w-0">
                     <h4
                       className={`font-semibold ${
-                        item.done
-                          ? "line-through"
-                          : ""
+                        item.done ? "line-through" : ""
                       }`}
                     >
                       {item.title}
@@ -836,7 +607,6 @@ const filteredTasks = sortedTasks.filter((item) => {
                       >
                         {item.priority}
                       </span>
-
                       <span className="flex items-center gap-1">
                         <Clock3 size={13} />
                         {item.duration} min
@@ -852,7 +622,7 @@ const filteredTasks = sortedTasks.filter((item) => {
                       {!item.done && (
                         <span className="flex items-center gap-1 text-cyan-400">
                           <Sparkles size={13} />
-                          {score(item, check)}% match
+                          {match(item)}
                         </span>
                       )}
                     </div>
@@ -873,7 +643,7 @@ const filteredTasks = sortedTasks.filter((item) => {
 
                   <button
                     type="button"
-                    onClick={() => deleteTask(item.id)}
+                    onClick={() => handleDelete(item.id)}
                     className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
                     aria-label={`Delete ${item.title}`}
                   >
