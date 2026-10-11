@@ -1,30 +1,17 @@
 
 const API_URL = (
-  import.meta.env.VITE_API_URL || "/api"
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5030/api"
 ).replace(/\/+$/, "");
 
 const TOKEN_KEY = "healthos_token";
 const USER_KEY = "healthos_user";
 
-// ========================================
-// Session Management
-// ========================================
-
 export function getToken() {
   return sessionStorage.getItem(TOKEN_KEY);
 }
 
-export function getSavedUser() {
-  try {
-    return JSON.parse(
-      sessionStorage.getItem(USER_KEY) || "null"
-    );
-  } catch {
-    return null;
-  }
-}
-
-export function saveSession({ token, user }) {
+export function saveSession({ token, user } = {}) {
   if (token) {
     sessionStorage.setItem(TOKEN_KEY, token);
   }
@@ -37,58 +24,52 @@ export function saveSession({ token, user }) {
   }
 }
 
+export function getSavedUser() {
+  try {
+    return JSON.parse(
+      sessionStorage.getItem(USER_KEY) || "null"
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function clearSession() {
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(USER_KEY);
 }
 
-// ========================================
-// API Request Helper
-// ========================================
-
 export async function api(path, options = {}) {
   const token = getToken();
 
-  const url = `${API_URL}/${path.replace(/^\/+/, "")}`;
-
   const headers = {
-    ...(options.body != null &&
-    !(options.body instanceof FormData)
+    ...(options.body != null
       ? { "Content-Type": "application/json" }
       : {}),
-
     ...(token
       ? { Authorization: `Bearer ${token}` }
       : {}),
-
     ...options.headers,
   };
 
   let response;
 
   try {
-    response = await fetch(url, {
-      ...options,
-      credentials: "include",
-      headers,
-    });
+    response = await fetch(
+      `${API_URL}/${path.replace(/^\/+/, "")}`,
+      {
+        ...options,
+        headers,
+        credentials: "include",
+      }
+    );
   } catch {
     throw new Error(
-      "Cannot connect to HealthOS backend. Check your API URL and server."
+      "Cannot connect to HealthOS backend."
     );
   }
 
-  const contentType =
-    response.headers.get("content-type") || "";
-
-  let data = {};
-
-  if (contentType.includes("application/json")) {
-    data = await response.json().catch(() => ({}));
-  } else {
-    const text = await response.text();
-    data = text ? { message: text } : {};
-  }
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(
@@ -102,45 +83,40 @@ export async function api(path, options = {}) {
 }
 
 // ========================================
-// Authentication APIs
+// Authentication
 // ========================================
 
-// Register
 export async function register(name, email, password) {
-  const result = await api("/auth/register", {
+  return api("/auth/register", {
     method: "POST",
     body: JSON.stringify({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
+      name,
+      email,
+      password,
+    }),
+  });
+}
+
+export async function login(email, password) {
+  const result = await api("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      email,
       password,
     }),
   });
 
-  // Save only when the backend returns
-  // an authenticated session.
-  if (result.token) {
+  if (
+    result.user &&
+    result.user.emailVerified !== false &&
+    result.user.isVerified !== false
+  ) {
     saveSession(result);
   }
 
   return result;
 }
 
-// Login
-export async function login(email, password) {
-  const result = await api("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({
-      email: email.trim().toLowerCase(),
-      password,
-    }),
-  });
-
-  saveSession(result);
-
-  return result;
-}
-
-// Logout
 export async function logout() {
   try {
     return await api("/auth/logout", {
@@ -151,60 +127,50 @@ export async function logout() {
   }
 }
 
-// Get current user
 export async function getCurrentUser() {
-  const result = await api("/auth/me");
-
-  if (result.user) {
-    saveSession({
-      user: result.user,
-    });
-  }
-
-  return result;
+  return api("/auth/me");
 }
 
 // ========================================
-// Email Confirmation APIs
+// Email Verification
 // ========================================
 
-// Confirm email with verification code
 export async function confirmEmail(email, code) {
   const result = await api("/auth/confirm-email", {
     method: "POST",
     body: JSON.stringify({
-      email: email.trim().toLowerCase(),
-      code: String(code).trim(),
+      email,
+      code,
     }),
   });
 
-  if (result.token) {
+  if (
+    result.token &&
+    result.user &&
+    result.user.emailVerified !== false &&
+    result.user.isVerified !== false
+  ) {
     saveSession(result);
   }
 
   return result;
 }
 
-// Resend email confirmation
 export async function resendConfirmation(email) {
   return api("/auth/resend-confirmation", {
     method: "POST",
-    body: JSON.stringify({
-      email: email.trim().toLowerCase(),
-    }),
+    body: JSON.stringify({ email }),
   });
 }
 
 // ========================================
-// Password Recovery APIs
+// Password Recovery
 // ========================================
 
 export async function forgotPassword(email) {
   return api("/auth/forgot", {
     method: "POST",
-    body: JSON.stringify({
-      email: email.trim().toLowerCase(),
-    }),
+    body: JSON.stringify({ email }),
   });
 }
 

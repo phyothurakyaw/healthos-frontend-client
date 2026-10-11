@@ -32,6 +32,7 @@ import {
   logout,
   getCurrentUser,
   clearSession,
+  resendConfirmation,
 } from "./security/api";
 
 import LoginPage from "./pages/LoginPage";
@@ -52,24 +53,27 @@ import WellnessPage from "./pages/WellnessPage";
 
 import { t, languages } from "./translate";
 
-// ========================================
+// ==========================================
 // Helpers
-// ========================================
+// ==========================================
 
 const read = (key, fallback) => {
   try {
-    return (
-      JSON.parse(localStorage.getItem(key)) ??
-      fallback
-    );
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
   } catch {
     return fallback;
   }
 };
 
-const id = () =>
+const generateId = () =>
   globalThis.crypto?.randomUUID?.() ||
   String(Date.now() + Math.random());
+
+const emptyForm = () => ({
+  name: "",
+  email: "",
+  password: "",
+});
 
 const normalizeEmail = (email) =>
   String(email || "").trim().toLowerCase();
@@ -78,17 +82,11 @@ const isUnverified = (account) =>
   account?.emailVerified === false ||
   account?.isVerified === false;
 
-const emptyForm = () => ({
-  name: "",
-  email: "",
-  password: "",
-});
-
-// ========================================
+// ==========================================
 // Initial Tasks
-// ========================================
+// ==========================================
 
-const initial = [
+const initialTasks = [
   {
     id: "sample1",
     title: "Review algorithms",
@@ -121,9 +119,18 @@ const initial = [
   },
 ];
 
-// ========================================
+const initialTaskForm = () => ({
+  title: "",
+  duration: 25,
+  priority: "medium",
+  deadline: "",
+  energy: 50,
+  attention: 50,
+});
+
+// ==========================================
 // Task Sorting
-// ========================================
+// ==========================================
 
 const priorityOrder = {
   high: 0,
@@ -139,9 +146,9 @@ const sortTasks = (a, b) =>
     b.deadline || "9999"
   );
 
-// ========================================
-// Recommendation Algorithm
-// ========================================
+// ==========================================
+// Task Recommendation Algorithm
+// ==========================================
 
 function score(task, check) {
   const energy =
@@ -155,8 +162,7 @@ function score(task, check) {
       ? 100
       : Math.max(
           0,
-          100 -
-            (task.duration - check.available) * 3
+          100 - (task.duration - check.available) * 3
         );
 
   const priority =
@@ -193,39 +199,42 @@ function score(task, check) {
   );
 }
 
-// ========================================
-// Main App
-// ========================================
+// ==========================================
+// Main Application
+// ==========================================
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ======================================
-  // Language and Font Size
-  // ======================================
+  // ========================================
+  // Language
+  // ========================================
 
   const [lang, setLang] = useState(
-    () =>
-      localStorage.getItem("healthos_lang") ||
-      "en"
+    () => localStorage.getItem("healthos_lang") || "en"
   );
+
+  // ========================================
+  // Font Size
+  // ========================================
 
   const [font, setFont] = useState(
     () =>
       Number(
-        localStorage.getItem("healthos_font") ||
-          100
+        localStorage.getItem("healthos_font") || 100
       )
   );
 
-  const [page, setPageState] = useState(
-    "dashboard"
-  );
+  // ========================================
+  // Current Page
+  // ========================================
+
+  const [page, setPageState] = useState("dashboard");
 
   const setPage = (next) => {
     setPageState(next);
-    navigate("/" + next);
+    navigate(`/${next}`);
   };
 
   useEffect(() => {
@@ -245,28 +254,24 @@ export default function App() {
     }
   }, [location.pathname]);
 
-  // ======================================
-  // Authentication State
-  // ======================================
+  // ========================================
+  // Authentication
+  // ========================================
 
   const [user, setUser] = useState(null);
   const [demo, setDemo] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [authMode, setAuthMode] = useState(
-    () => {
-      const modes = {
-        "/login": "login",
-        "/register": "register",
-        "/forgot-password": "forgot",
-        "/reset-password": "reset",
-      };
+  const [authMode, setAuthMode] = useState(() => {
+    const modes = {
+      "/login": "login",
+      "/register": "register",
+      "/forgot-password": "forgot",
+      "/reset-password": "reset",
+    };
 
-      return (
-        modes[location.pathname] || "login"
-      );
-    }
-  );
+    return modes[location.pathname] || "login";
+  });
 
   const [form, setForm] = useState(emptyForm);
 
@@ -274,17 +279,16 @@ export default function App() {
   const [devLink, setDevLink] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // ======================================
-  // Authentication Navigation
-  // ======================================
+  // ========================================
+  // Auth Navigation
+  // ========================================
 
   const changeAuthMode = (mode) => {
     setAuthMode(mode);
     setMessage("");
     setDevLink("");
 
-    // Clear the login fields when switching
-    // to Login from another auth page.
+    // Clear email and password when opening Login.
     if (mode === "login") {
       setForm(emptyForm());
     }
@@ -299,9 +303,9 @@ export default function App() {
     navigate(routes[mode] || "/login");
   };
 
-  // ======================================
-  // Sync Auth Mode with Browser URL
-  // ======================================
+  // ========================================
+  // Sync Authentication Route
+  // ========================================
 
   useEffect(() => {
     const routeModes = {
@@ -311,24 +315,22 @@ export default function App() {
       "/reset-password": "reset",
     };
 
-    const currentMode =
-      routeModes[location.pathname];
+    const currentMode = routeModes[location.pathname];
 
     if (currentMode) {
       setAuthMode(currentMode);
     }
 
-    // IMPORTANT:
-    // Every time Login is opened from
-    // another page, reset email/password.
+    // Works when navigating with links,
+    // browser Back, or direct URL navigation.
     if (location.pathname === "/login") {
       setForm(emptyForm());
     }
   }, [location.pathname]);
 
-  // ======================================
-  // Daily Check-in
-  // ======================================
+  // ========================================
+  // Daily Energy Check-in
+  // ========================================
 
   const [check, setCheck] = useState(() =>
     read("healthos_check", {
@@ -339,79 +341,60 @@ export default function App() {
     })
   );
 
-  // ======================================
-  // Tasks and History
-  // ======================================
+  // ========================================
+  // Tasks
+  // ========================================
 
   const [tasks, setTasks] = useState(() =>
-    read("healthos_tasks", initial)
+    read("healthos_tasks", initialTasks)
   );
 
-  const [checkins, setCheckins] = useState(
-    () => read("healthos_checkins", [])
+  const [checkins, setCheckins] = useState(() =>
+    read("healthos_checkins", [])
   );
 
-  const [task, setTask] = useState({
-    title: "",
-    duration: 25,
-    priority: "medium",
-    deadline: "",
-    energy: 50,
-    attention: 50,
-  });
+  const [task, setTask] = useState(initialTaskForm);
 
-  // ======================================
+  // ========================================
   // Translation
-  // ======================================
+  // ========================================
 
   const [from, setFrom] = useState("en");
   const [to, setTo] = useState("es");
 
-  const [original, setOriginal] = useState(
-    ""
-  );
+  const [original, setOriginal] = useState("");
+  const [translated, setTranslated] = useState("");
 
-  const [translated, setTranslated] =
-    useState("");
-
-  // ======================================
+  // ========================================
   // Focus Timer
-  // ======================================
+  // ========================================
 
-  const [seconds, setSeconds] = useState(
-    25 * 60
-  );
-
-  const [running, setRunning] = useState(
-    false
-  );
+  const [seconds, setSeconds] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
 
   const [
     focusSessionStarted,
     setFocusSessionStarted,
   ] = useState(false);
 
-  // ======================================
-  // Synchronization
-  // ======================================
+  // ========================================
+  // Account Sync
+  // ========================================
 
-  const [synced, setSynced] = useState(
-    false
-  );
+  const [synced, setSynced] = useState(false);
 
-  // ======================================
+  // ========================================
   // Translation Helper
-  // ======================================
+  // ========================================
 
   const T = (key) => t(lang, key);
 
-  // ======================================
-  // Computed Values
-  // ======================================
+  // ========================================
+  // Computed Dashboard Values
+  // ========================================
 
   const readiness = Math.round(
-    check.energy * 0.5 +
-      check.attention * 0.5
+    check.energy * 0.5 + check.attention * 0.5
   );
 
   const ordered = useMemo(
@@ -427,9 +410,7 @@ export default function App() {
           ...item,
           score: score(item, check),
         }))
-        .sort(
-          (a, b) => b.score - a.score
-        )[0],
+        .sort((a, b) => b.score - a.score)[0],
     [tasks, check]
   );
 
@@ -439,13 +420,16 @@ export default function App() {
 
   const total = tasks.length;
 
+  // ========================================
+  // Focus Timer Initialization
+  // ========================================
+
   useEffect(() => {
     if (!focusSessionStarted) {
       setSeconds(
         Math.max(
           1,
-          Number(recommended?.duration) ||
-            25
+          Number(recommended?.duration) || 25
         ) * 60
       );
     }
@@ -455,33 +439,27 @@ export default function App() {
     focusSessionStarted,
   ]);
 
-  // ======================================
-  // Persist Language and Font Size
-  // ======================================
+  // ========================================
+  // Save Language and Font
+  // ========================================
 
   useEffect(() => {
-    localStorage.setItem(
-      "healthos_lang",
-      lang
-    );
-
-    localStorage.setItem(
-      "healthos_font",
-      String(font)
-    );
+    localStorage.setItem("healthos_lang", lang);
+    localStorage.setItem("healthos_font", String(font));
   }, [lang, font]);
 
-  // ======================================
-  // Initialize Authentication
-  // ======================================
+  // ========================================
+  // Initialize User Session
+  // ========================================
 
   useEffect(() => {
     let active = true;
 
     async function initializeAuth() {
       try {
-        const result =
-          await getCurrentUser();
+        // Uses the shared API client.
+        // Backend URL comes from VITE_API_URL.
+        const result = await getCurrentUser();
 
         if (!active) return;
 
@@ -511,9 +489,9 @@ export default function App() {
     };
   }, []);
 
-  // ======================================
-  // Load User Data
-  // ======================================
+  // ========================================
+  // Load Tasks from Backend
+  // ========================================
 
   useEffect(() => {
     if (!user || demo) {
@@ -530,9 +508,7 @@ export default function App() {
         if (!active) return;
 
         setTasks(
-          Array.isArray(data.tasks)
-            ? data.tasks
-            : []
+          Array.isArray(data.tasks) ? data.tasks : []
         );
 
         setCheckins(
@@ -554,9 +530,9 @@ export default function App() {
     };
   }, [user, demo]);
 
-  // ======================================
-  // Save Tasks and Check-ins
-  // ======================================
+  // ========================================
+  // Save Tasks to Backend or LocalStorage
+  // ========================================
 
   useEffect(() => {
     if (user && !demo) {
@@ -594,6 +570,10 @@ export default function App() {
     synced,
   ]);
 
+  // ========================================
+  // Save Daily Check-in
+  // ========================================
+
   useEffect(() => {
     localStorage.setItem(
       "healthos_check",
@@ -601,9 +581,9 @@ export default function App() {
     );
   }, [check]);
 
-  // ======================================
-  // Focus Timer
-  // ======================================
+  // ========================================
+  // Focus Timer Countdown
+  // ========================================
 
   useEffect(() => {
     if (!running) return;
@@ -622,9 +602,9 @@ export default function App() {
     return () => clearInterval(timer);
   }, [running]);
 
-  // ======================================
-  // Authentication Submit
-  // ======================================
+  // ========================================
+  // Register / Login / Password Reset
+  // ========================================
 
   async function submitAuth(event) {
     event.preventDefault();
@@ -637,31 +617,23 @@ export default function App() {
 
     try {
       const path = location.pathname;
-      const email = normalizeEmail(
-        form.email
-      );
+      const email = normalizeEmail(form.email);
 
-      // ==================================
+      // ====================================
       // REGISTER
-      // ==================================
+      // ====================================
 
       if (path === "/register") {
         if (!form.name.trim()) {
-          throw new Error(
-            "Please enter your name."
-          );
+          throw new Error("Please enter your name.");
         }
 
         if (!email) {
-          throw new Error(
-            "Please enter your email."
-          );
+          throw new Error("Please enter your email.");
         }
 
         if (!form.password) {
-          throw new Error(
-            "Please enter a password."
-          );
+          throw new Error("Please enter a password.");
         }
 
         const result = await register(
@@ -670,8 +642,8 @@ export default function App() {
           form.password
         );
 
-        // Registration must ALWAYS go
-        // to email verification first.
+        // Registration must not grant access
+        // to the dashboard before verification.
         clearSession();
 
         setUser(null);
@@ -683,13 +655,16 @@ export default function App() {
           email
         );
 
+        // Never retain registration password.
+        setForm(emptyForm());
+
         navigate("/verify-email", {
           replace: true,
           state: {
             email,
             message:
               result.message ||
-              "Registration successful! Please verify your email.",
+              "Registration successful! Check your email.",
             devCode: result.devCode,
             devVerificationUrl:
               result.devVerificationUrl,
@@ -699,9 +674,9 @@ export default function App() {
         return;
       }
 
-      // ==================================
+      // ====================================
       // LOGIN
-      // ==================================
+      // ====================================
 
       if (path === "/login") {
         if (!email || !form.password) {
@@ -717,30 +692,30 @@ export default function App() {
 
         if (!result.user) {
           throw new Error(
-            result.message ||
-              "Login failed."
+            result.message || "Login failed."
           );
         }
 
-        // Unverified users cannot enter
-        // the dashboard.
         if (isUnverified(result.user)) {
           clearSession();
 
           setUser(null);
           setDemo(false);
+          setSynced(false);
 
           sessionStorage.setItem(
             "healthos_pending_email",
             email
           );
 
+          setForm(emptyForm());
+
           navigate("/verify-email", {
             replace: true,
             state: {
               email,
               message:
-                "Please verify your email before continuing.",
+                "Please verify your email before logging in.",
             },
           });
 
@@ -755,8 +730,7 @@ export default function App() {
           "healthos_pending_email"
         );
 
-        // Clear login credentials after
-        // successful login.
+        // Clear email/password after login.
         setForm(emptyForm());
 
         navigate("/dashboard", {
@@ -766,22 +740,15 @@ export default function App() {
         return;
       }
 
-      // ==================================
+      // ====================================
       // FORGOT PASSWORD
-      // ==================================
+      // ====================================
 
-      if (
-        path === "/forgot-password"
-      ) {
-        const result = await api(
-          "/auth/forgot",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              email,
-            }),
-          }
-        );
+      if (path === "/forgot-password") {
+        const result = await api("/auth/forgot", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
 
         navigate("/reset-password", {
           state: {
@@ -794,31 +761,24 @@ export default function App() {
         return;
       }
 
-      // ==================================
+      // ====================================
       // RESET PASSWORD
-      // ==================================
+      // ====================================
 
-      if (
-        path === "/reset-password"
-      ) {
-        const result = await api(
-          "/auth/reset",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              ...form,
-              email,
-            }),
-          }
-        );
+      if (path === "/reset-password") {
+        const result = await api("/auth/reset", {
+          method: "POST",
+          body: JSON.stringify({
+            ...form,
+            email,
+          }),
+        });
 
-        // This clears email/password
-        // before returning to Login.
         changeAuthMode("login");
 
         setMessage(
           result.message ||
-            "Password reset successfully. Please log in."
+          "Password reset successfully. Please log in."
         );
 
         return;
@@ -829,34 +789,31 @@ export default function App() {
       );
     } catch (error) {
       setMessage(
-        error.message ||
-          "Authentication failed."
+        error.message || "Authentication failed."
       );
     } finally {
       setBusy(false);
     }
   }
 
-  // ======================================
+  // ========================================
   // Email Verification Success
-  // ======================================
+  // ========================================
 
   async function handleVerified() {
     setBusy(true);
     setMessage("");
 
     try {
-      // Email verification must create
-      // an authenticated session.
-      const session =
-        await getCurrentUser();
+      // The verification endpoint should
+      // establish an authenticated session.
+      const session = await getCurrentUser();
 
-      const verifiedUser =
-        session.user;
+      const verifiedUser = session.user;
 
       if (!verifiedUser) {
         throw new Error(
-          "Email verified, but no active session was found. Please log in."
+          "Email verified. Please log in to continue."
         );
       }
 
@@ -874,19 +831,15 @@ export default function App() {
         "healthos_pending_email"
       );
 
-      // Remove email and password after
-      // successful verification.
       setForm(emptyForm());
 
       navigate("/dashboard", {
         replace: true,
       });
     } catch (error) {
-      // Never bypass authentication.
-      // If verification did not create
-      // a session, send user to Login.
       clearSession();
 
+      setUser(null);
       setForm(emptyForm());
 
       navigate("/login", {
@@ -894,17 +847,16 @@ export default function App() {
       });
 
       setMessage(
-        error.message ||
-          "Please log in to continue."
+        error.message || "Please log in to continue."
       );
     } finally {
       setBusy(false);
     }
   }
 
-  // ======================================
-  // Resend Verification
-  // ======================================
+  // ========================================
+  // Resend Verification Email
+  // ========================================
 
   async function resendVerification() {
     if (busy) return;
@@ -925,27 +877,15 @@ export default function App() {
         );
       }
 
-      const result = await api(
-        "/auth/resend-confirmation",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            email,
-          }),
-        }
-      );
+      const result = await resendConfirmation(email);
 
       setMessage(
         result.message ||
-          "Verification code sent."
+        "A new verification email has been sent."
       );
 
-      if (
-        result.devVerificationUrl
-      ) {
-        setDevLink(
-          result.devVerificationUrl
-        );
+      if (result.devVerificationUrl) {
+        setDevLink(result.devVerificationUrl);
       }
     } catch (error) {
       setMessage(error.message);
@@ -954,9 +894,9 @@ export default function App() {
     }
   }
 
-  // ======================================
+  // ========================================
   // Logout
-  // ======================================
+  // ========================================
 
   async function handleLogout() {
     try {
@@ -976,7 +916,7 @@ export default function App() {
       setMessage("");
       setDevLink("");
 
-      // Clear both login inputs.
+      // Clear Login fields.
       setForm(emptyForm());
 
       navigate("/login", {
@@ -985,9 +925,9 @@ export default function App() {
     }
   }
 
-  // ======================================
+  // ========================================
   // Add Task
-  // ======================================
+  // ========================================
 
   function addTask(event) {
     event.preventDefault();
@@ -999,33 +939,20 @@ export default function App() {
       {
         ...task,
         title: task.title.trim(),
-        id: id(),
-        duration: Number(
-          task.duration
-        ),
-        energy: Number(
-          task.energy
-        ),
-        attention: Number(
-          task.attention
-        ),
+        id: generateId(),
+        duration: Number(task.duration),
+        energy: Number(task.energy),
+        attention: Number(task.attention),
         done: false,
       },
     ]);
 
-    setTask({
-      title: "",
-      duration: 25,
-      priority: "medium",
-      deadline: "",
-      energy: 50,
-      attention: 50,
-    });
+    setTask(initialTaskForm());
   }
 
-  // ======================================
-  // Save Daily Check-in
-  // ======================================
+  // ========================================
+  // Save Energy Check-in
+  // ========================================
 
   function saveCheck() {
     setCheckins((previous) =>
@@ -1033,17 +960,16 @@ export default function App() {
         ...previous,
         {
           ...check,
-          date:
-            new Date().toISOString(),
-          id: id(),
+          date: new Date().toISOString(),
+          id: generateId(),
         },
       ].slice(-100)
     );
   }
 
-  // ======================================
+  // ========================================
   // Translation
-  // ======================================
+  // ========================================
 
   async function doTranslate() {
     if (!original.trim()) {
@@ -1058,22 +984,19 @@ export default function App() {
     setTranslated("");
 
     try {
-      const result = await api(
-        "/translate",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            text: original,
-            source: from,
-            target: to,
-          }),
-        }
-      );
+      const result = await api("/translate", {
+        method: "POST",
+        body: JSON.stringify({
+          text: original,
+          source: from,
+          target: to,
+        }),
+      });
 
       setTranslated(
         result.translatedText ||
-          result.translation ||
-          ""
+        result.translation ||
+        ""
       );
     } catch (error) {
       setMessage(error.message);
@@ -1082,40 +1005,22 @@ export default function App() {
     }
   }
 
-  // ======================================
+  // ========================================
   // Navigation Tabs
-  // ======================================
+  // ========================================
 
   const tabs = [
-    [
-      "dashboard",
-      LayoutDashboard,
-    ],
-    [
-      "fitness",
-      Dumbbell,
-    ],
-    [
-      "wellness",
-      HeartPulse,
-    ],
-    [
-      "tasks",
-      ListTodo,
-    ],
-    [
-      "insights",
-      BarChart3,
-    ],
-    [
-      "translate",
-      Languages,
-    ],
+    ["dashboard", LayoutDashboard],
+    ["fitness", Dumbbell],
+    ["wellness", HeartPulse],
+    ["tasks", ListTodo],
+    ["insights", BarChart3],
+    ["translate", Languages],
   ];
 
-  // ======================================
-  // Loading Screen
-  // ======================================
+  // ========================================
+  // Loading
+  // ========================================
 
   if (loading) {
     return (
@@ -1125,29 +1030,24 @@ export default function App() {
     );
   }
 
-  // ======================================
-  // Authentication Routes
-  // ======================================
+  // ========================================
+  // Authentication Pages
+  // ========================================
 
   if (!user && !demo) {
     const authProps = {
       T,
       authMode,
-      setAuthMode:
-        changeAuthMode,
-
+      setAuthMode: changeAuthMode,
       form,
       setForm,
       submitAuth,
-
       busy,
       message,
       devLink,
-
       resendVerification,
       setDemo,
       setMessage,
-
       lang,
       setLang,
       languages,
@@ -1156,38 +1056,16 @@ export default function App() {
     return (
       <Routes>
         <Route
-          path="/register"
-          element={
-            <RegisterPage
-              {...authProps}
-            />
-          }
-        />
-
-        <Route
           path="/login"
           element={
-            <LoginPage
-              {...authProps}
-            />
+            <LoginPage {...authProps} />
           }
         />
 
         <Route
-          path="/forgot-password"
+          path="/register"
           element={
-            <ForgotPasswordPage
-              {...authProps}
-            />
-          }
-        />
-
-        <Route
-          path="/reset-password"
-          element={
-            <ResetPasswordPage
-              {...authProps}
-            />
+            <RegisterPage {...authProps} />
           }
         />
 
@@ -1195,9 +1073,7 @@ export default function App() {
           path="/verify-email"
           element={
             <EmailVerificationPage
-              onVerified={
-                handleVerified
-              }
+              onVerified={handleVerified}
             />
           }
         />
@@ -1213,21 +1089,32 @@ export default function App() {
         />
 
         <Route
+          path="/forgot-password"
+          element={
+            <ForgotPasswordPage {...authProps} />
+          }
+        />
+
+        <Route
+          path="/reset-password"
+          element={
+            <ResetPasswordPage {...authProps} />
+          }
+        />
+
+        <Route
           path="*"
           element={
-            <Navigate
-              to="/login"
-              replace
-            />
+            <Navigate to="/login" replace />
           }
         />
       </Routes>
     );
   }
 
-  // ======================================
-  // Page Props
-  // ======================================
+  // ========================================
+  // Shared Page Props
+  // ========================================
 
   const pageProps = {
     Human,
@@ -1282,15 +1169,15 @@ export default function App() {
     languages,
   };
 
-  // ======================================
-  // Main Application
-  // ======================================
+  // ========================================
+  // Main Dashboard
+  // ========================================
 
   return (
     <div
       className="app"
       style={{
-        fontSize: font + "%",
+        fontSize: `${font}%`,
       }}
     >
       {/* Navbar */}
@@ -1324,10 +1211,7 @@ export default function App() {
 
             <h1 className="text-3xl md:text-4xl font-bold mt-2">
               {T("welcome")}
-              {user
-                ? ", " + user.name
-                : ""}{" "}
-              👋
+              {user ? `, ${user.name}` : ""} 👋
             </h1>
 
             <p className="muted mt-2">
@@ -1336,9 +1220,7 @@ export default function App() {
           </div>
 
           <span className="pill flex items-center gap-2">
-            <ShieldCheck
-              size={15}
-            />
+            <ShieldCheck size={15} />
 
             {demo
               ? "Demo mode"
@@ -1348,7 +1230,7 @@ export default function App() {
           </span>
         </div>
 
-        {/* Status Message */}
+        {/* Message */}
 
         {message && (
           <div
@@ -1360,24 +1242,20 @@ export default function App() {
             <button
               type="button"
               className="float-right"
-              onClick={() =>
-                setMessage("")
-              }
+              onClick={() => setMessage("")}
             >
               ×
             </button>
           </div>
         )}
 
-        {/* Main Routes */}
+        {/* Page Routes */}
 
         <Routes>
           <Route
             path="/dashboard"
             element={
-              <DashboardPage
-                {...pageProps}
-              />
+              <DashboardPage {...pageProps} />
             }
           />
 
@@ -1385,9 +1263,7 @@ export default function App() {
             path="/fitness"
             element={
               <FitnessPage
-                readiness={
-                  readiness
-                }
+                readiness={readiness}
                 check={check}
                 Human={Human}
               />
@@ -1398,9 +1274,7 @@ export default function App() {
             path="/wellness"
             element={
               <WellnessPage
-                readiness={
-                  readiness
-                }
+                readiness={readiness}
                 check={check}
                 Human={Human}
               />
@@ -1410,27 +1284,21 @@ export default function App() {
           <Route
             path="/tasks"
             element={
-              <TasksPage
-                {...pageProps}
-              />
+              <TasksPage {...pageProps} />
             }
           />
 
           <Route
             path="/insights"
             element={
-              <InsightsPage
-                {...pageProps}
-              />
+              <InsightsPage {...pageProps} />
             }
           />
 
           <Route
             path="/translate"
             element={
-              <TranslatePage
-                {...pageProps}
-              />
+              <TranslatePage {...pageProps} />
             }
           />
 
