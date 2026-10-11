@@ -102,35 +102,37 @@ export default function DashboardPage({
   ];
   return (
     <>
-      {/* Energy, Attention, Available Time */}
-      <div className="grid md:grid-cols-3 gap-5 mb-5">
+      {/* Energy and Attention — 2 columns */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
         {[
-          [T("energy"), hasTodayCheckin ? todayScores.energy : 0, Activity],
-          [T("attention"), hasTodayCheckin ? todayScores.attention : 0, Brain],
-          // [T("available"), hasTodayCheckin ? todayScores.available : 0, Clock],
-        ].map(([label, value, Icon]) => (
-          <div className="panel p-6" key={label}>
+          {
+            key: "energy",
+            label: T("energy"),
+            value: hasTodayCheckin ? todayScores.energy : 0,
+            Icon: Activity,
+          },
+          {
+            key: "attention",
+            label: T("attention"),
+            value: hasTodayCheckin ? todayScores.attention : 0,
+            Icon: Brain,
+          },
+        ].map(({ key, label, value, Icon }) => (
+          <div className="panel p-6" key={key}>
             <div className="flex items-center justify-between muted">
               <span>{label}</span>
               <Icon size={20} />
             </div>
-            {/* <p className="text-4xl font-bold mt-3">
-              {value}
-              {label === T("available") ? (
-                <span className="text-base muted"> min</span>
-              ) : (
-                "%"
-              )}
-            </p> */}
+
+            <p className="text-4xl font-bold mt-3">
+              {value}%
+            </p>
+
             <div className="h-2 bg-slate-700 rounded-full mt-4">
               <div
                 className="h-2 rounded-full bg-emerald-300"
                 style={{
-                  width: `${
-                    label === T("available")
-                      ? Math.min(100, value / 1.8)
-                      : value
-                  }%`,
+                  width: `${Math.max(0, Math.min(100, Number(value) || 0))}%`,
                 }}
               />
             </div>
