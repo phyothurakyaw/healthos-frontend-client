@@ -8,12 +8,13 @@ import {
   Pause,
   RotateCcw,
 } from "lucide-react";
-
 export default function DashboardPage({
   Human,
   T = (key) => key,
   check,
   setCheck,
+  todayScores = { energy: 0, attention: 0 },
+  hasTodayCheckin = false,
   readiness,
   recommended,
   seconds,
@@ -32,32 +33,25 @@ export default function DashboardPage({
       ...previous,
       [key]: value,
     }));
-
   const startRecommended = () => {
     if (!recommended) return;
-
     setSeconds(
       Math.max(1, Number(recommended.duration) || 25) * 60
     );
-
     setRunning(true);
     setFocusSessionStarted(true);
   };
-
   const resetTimer = () => {
     setRunning(false);
     setFocusSessionStarted(false);
-
     setSeconds(
       Math.max(1, Number(recommended?.duration) || 25) * 60
     );
   };
-
   const translateLabel = (key, fallback) => {
     const translated = T(key);
     return translated === key ? fallback : translated;
   };
-
   const questions = [
     {
       key: "sleep",
@@ -106,31 +100,28 @@ export default function DashboardPage({
       right: "5 = Very focused",
     },
   ];
-
   return (
     <>
       {/* Energy, Attention, Available Time */}
       <div className="grid md:grid-cols-3 gap-5 mb-5">
         {[
-          [T("energy"), check.energy, Activity],
-          [T("attention"), check.attention, Brain],
-          [T("available"), check.available, Clock],
+          [T("energy"), hasTodayCheckin ? todayScores.energy : 0, Activity],
+          [T("attention"), hasTodayCheckin ? todayScores.attention : 0, Brain],
+          // [T("available"), hasTodayCheckin ? todayScores.available : 0, Clock],
         ].map(([label, value, Icon]) => (
           <div className="panel p-6" key={label}>
             <div className="flex items-center justify-between muted">
               <span>{label}</span>
               <Icon size={20} />
             </div>
-
-            <p className="text-4xl font-bold mt-3">
+            {/* <p className="text-4xl font-bold mt-3">
               {value}
               {label === T("available") ? (
                 <span className="text-base muted"> min</span>
               ) : (
                 "%"
               )}
-            </p>
-
+            </p> */}
             <div className="h-2 bg-slate-700 rounded-full mt-4">
               <div
                 className="h-2 rounded-full bg-emerald-300"
@@ -146,8 +137,14 @@ export default function DashboardPage({
           </div>
         ))}
       </div>
+      {!hasTodayCheckin && (
+      <p className="muted text-sm mb-5" role="status">
+        No check-in saved today. Energy and Attention start at 0% each day.
+        Save a check-in to update your scores.
+      </p>
+    )}
 
-      {/* Human Battery and Daily Check-in */}
+    {/* Human Battery and Daily Check-in */}
       <div className="grid lg:grid-cols-5 gap-5">
         {/* Human Battery — unchanged */}
         <section className="panel p-6 lg:col-span-3">
@@ -155,32 +152,26 @@ export default function DashboardPage({
             <h2 className="text-xl font-bold">
               {translateLabel("humanBattery", "Human battery")}
             </h2>
-
             <span className="pill">
               {translateLabel("liveReadiness", "Live readiness")}
             </span>
           </div>
-
           <Human readiness={readiness} />
-
           <div className="text-center">
             <p className="text-5xl font-extrabold accent">
               {readiness}%
             </p>
-
             <p className="muted">
               {T("readiness")} ·{" "}
               {translateLabel("dragRotate", "Drag to rotate")}
             </p>
           </div>
         </section>
-
         {/* Daily Check-in — updated input questions */}
         <section className="panel p-6 lg:col-span-2">
           <h2 className="text-xl font-bold mb-5">
             {T("checkin")}
           </h2>
-
           {!demo && (
             <p className="muted text-sm mb-4">
               {translateLabel(
@@ -189,16 +180,13 @@ export default function DashboardPage({
               )}
             </p>
           )}
-
           {/* Question 1: Sleep hours */}
           {/* Question 2: Sleep quality */}
           {/* Question 4: Perceived energy */}
           {/* Question 5: Perceived focus */}
-
           {questions.map((question) => {
             const value =
               check[question.key] ?? question.defaultValue;
-
             return (
               <label
                 className="block mb-5"
@@ -211,13 +199,11 @@ export default function DashboardPage({
                       question.label
                     )}
                   </span>
-
                   <strong className="whitespace-nowrap">
                     {value}
                     {question.suffix}
                   </strong>
                 </span>
-
                 <input
                   className="range"
                   type="range"
@@ -232,7 +218,6 @@ export default function DashboardPage({
                     )
                   }
                 />
-
                 {question.left && question.right && (
                   <div className="flex justify-between gap-3 text-xs muted mt-1">
                     <span>{question.left}</span>
@@ -244,7 +229,6 @@ export default function DashboardPage({
               </label>
             );
           })}
-
           {/* Question 3: Physical activity */}
           <label className="block mb-5">
             <span className="flex justify-between mb-2 gap-3">
@@ -254,12 +238,10 @@ export default function DashboardPage({
                   "How physically active have you been today?"
                 )}
               </span>
-
               <strong>
                 {T(check.activityLevel || "moderate")}
               </strong>
             </span>
-
             <select
               className="w-full rounded-xl bg-slate-800 border border-white/10 p-3"
               value={check.activityLevel || "moderate"}
@@ -272,14 +254,12 @@ export default function DashboardPage({
               <option value="high">{T("high")}</option>
             </select>
           </label>
-
           {/* Available Time — unchanged */}
           <label className="block mb-5">
             <span className="flex justify-between mb-2">
               <span>{T("available")}</span>
               <strong>{check.available ?? 45} min</strong>
             </span>
-
             <input
               className="range"
               type="range"
@@ -295,7 +275,6 @@ export default function DashboardPage({
               }
             />
           </label>
-
           {/* Save Check-in — unchanged */}
           <button
             type="button"
@@ -305,7 +284,6 @@ export default function DashboardPage({
           >
             {busy ? T("saving") : T("save")}
           </button>
-
           {/* Demo buttons — same design, updated input data */}
           <div className="flex gap-2 mt-3">
             <button
@@ -330,7 +308,6 @@ export default function DashboardPage({
                 "Low energy demo"
               )}
             </button>
-
             <button
               type="button"
               className="ghost flex-1"
@@ -353,20 +330,17 @@ export default function DashboardPage({
           </div>
         </section>
       </div>
-
       {/* Recommendation and Timer — unchanged */}
       <div className="grid lg:grid-cols-5 gap-5 mt-5">
         <section className="panel p-6 lg:col-span-3">
           <h2 className="text-xl font-bold mb-4">
             ✨ {T("recommend")}
           </h2>
-
           {recommended ? (
             <>
               <h3 className="text-2xl font-semibold">
                 {recommended.title}
               </h3>
-
               <p className="muted mt-2">
                 {recommended.duration} min ·{" "}
                 {T(recommended.priority)} priority ·{" "}
@@ -374,12 +348,10 @@ export default function DashboardPage({
                   ? T("notRanked")
                   : `${Math.round(recommended.score)}% ${T("match")}`}
               </p>
-
               <p className="mt-4 text-sm muted">
                 {recommended.explanation ||
                   "Matched using your energy, attention, available time, priority and deadline."}
               </p>
-
               <button
                 type="button"
                 className="btn mt-5"
@@ -388,7 +360,6 @@ export default function DashboardPage({
                 <Play size={16} className="inline mr-2" />
                 {T("start")}
               </button>
-
               <button
                 type="button"
                 className="ghost mt-5 ml-3"
@@ -402,7 +373,6 @@ export default function DashboardPage({
               <p className="muted">
                 {T("noTasks")}
               </p>
-
               <button
                 type="button"
                 className="btn"
@@ -413,18 +383,15 @@ export default function DashboardPage({
             </div>
           )}
         </section>
-
         <section className="panel p-6 lg:col-span-2">
           <h2 className="text-xl font-bold mb-4">
             {T("timer")}
           </h2>
-
           <p className="text-5xl font-bold tabular-nums text-center my-8">
             {String(Math.floor(seconds / 60)).padStart(2, "0")}
             :
             {String(seconds % 60).padStart(2, "0")}
           </p>
-
           <div className="flex gap-3 justify-center">
             <button
               type="button"
@@ -438,7 +405,6 @@ export default function DashboardPage({
                     ) * 60
                   );
                 }
-
                 setFocusSessionStarted(true);
                 setRunning(!running);
               }}
@@ -449,7 +415,6 @@ export default function DashboardPage({
                 <Play size={18} />
               )}
             </button>
-
             <button
               type="button"
               className="ghost"
